@@ -333,6 +333,7 @@ def train():
     # ── 학습 루프 ─────────────────────────────────────────────────────────────
     model.train()
     step         = start_step
+    opt_step     = 0
     last_save    = time.time()
     accum_loss   = 0.0
     t_start      = time.time()
@@ -343,8 +344,7 @@ def train():
         for x, y in loader:
             x, y = x.to(device), y.to(device)
 
-            # bf16 mixed precision
-            with autocast(dtype=torch.bfloat16):
+            with torch.amp.autocast('cuda', dtype=torch.bfloat16):
                 _, loss = model(x, y)
                 loss    = loss / cfg['grad_accum']
 
@@ -356,25 +356,24 @@ def train():
                 torch.nn.utils.clip_grad_norm_(model.parameters(),
                                                cfg['grad_clip'])
 
-                # LR 업데이트
-                lr = get_lr(step, cfg)
+                lr = get_lr(opt_step, cfg)
                 for pg in optimizer.param_groups:
                     pg['lr'] = lr
 
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
+                opt_step += 1
 
-                if step % cfg['log_interval'] == 0:
+                if opt_step % cfg['log_interval'] == 0:
                     elapsed = time.time() - t_start
-                    print(f"step {step:6d} | loss {accum_loss:.4f} | "
-                          f"lr {lr:.2e} | {elapsed:.0f}s")
+                    print(f"opt {opt_step:6d} | loss {accum_loss:.4f} | "
+                          f"lr {lr:.2e} | {elapsed:.0f}s", flush=True)
                     accum_loss = 0.0
 
-                # 30분마다 체크포인트
                 if time.time() - last_save > cfg['save_interval_sec']:
                     save_checkpoint(model, optimizer, scaler,
-                                    step, accum_loss, cfg)
+                                    opt_step, accum_loss, cfg)
                     last_save = time.time()
 
             step += 1
