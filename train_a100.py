@@ -86,22 +86,32 @@ class TextDataset(Dataset):
 
     def __init__(self, data_path: str, tokenizer, seq_len: int,
                  max_tokens: int = None):
-        print("데이터 토크나이징 중... (시간 걸림)")
-        tokens = []
-        with open(data_path, encoding='utf-8') as f:
-            for i, line in enumerate(f):
-                line = line.strip()
-                if line:
-                    tokens.extend(tokenizer.encode(line))
-                if max_tokens and len(tokens) >= max_tokens:
-                    break
-                if i % 100000 == 0:
-                    print(f"  {i:,}줄 처리... ({len(tokens):,} 토큰)")
+        cache_path = data_path + '.tokens.pt'
 
-        self.seq_len = seq_len
-        self.data    = torch.tensor(tokens, dtype=torch.long)
-        n_chunks     = (len(self.data) - 1) // seq_len
+        if os.path.exists(cache_path):
+            print(f"캐시 로드 중: {cache_path}")
+            self.data = torch.load(cache_path)
+            print(f"캐시 로드 완료. 총 토큰: {len(self.data):,}")
+        else:
+            print("데이터 토크나이징 중... (시간 걸림)")
+            tokens = []
+            with open(data_path, encoding='utf-8') as f:
+                for i, line in enumerate(f):
+                    line = line.strip()
+                    if line:
+                        tokens.extend(tokenizer.encode(line))
+                    if max_tokens and len(tokens) >= max_tokens:
+                        break
+                    if i % 100000 == 0:
+                        print(f"  {i:,}줄 처리... ({len(tokens):,} 토큰)")
+
+            self.data = torch.tensor(tokens, dtype=torch.long)
+            torch.save(self.data, cache_path)
+            print(f"캐시 저장 완료: {cache_path}")
+
+        n_chunks = (len(self.data) - 1) // seq_len
         print(f"총 토큰: {len(self.data):,}  청크: {n_chunks:,}")
+        self.seq_len = seq_len
 
     def __len__(self):
         return (len(self.data) - 1) // self.seq_len
