@@ -9,6 +9,7 @@ A100 최적화 GPT-2 124M 한국어 학습 스크립트
 """
 
 import os
+import re
 import time
 import math
 import json
@@ -275,15 +276,17 @@ def save_checkpoint(model, optimizer, scaler, step, loss, cfg):
         'config':    cfg,
     }, path)
 
-    # 최신 2개만 유지
-    ckpts = sorted(glob.glob(os.path.join(cfg['save_dir'], 'ckpt_step*.pt')))
+    # 최신 2개만 유지 (숫자 기준 정렬)
+    ckpts = sorted(glob.glob(os.path.join(cfg['save_dir'], 'ckpt_step*.pt')),
+                   key=lambda x: int(re.search(r'ckpt_step(\d+)\.pt', x).group(1)))
     for old in ckpts[:-2]:
         os.remove(old)
     print(f"\n체크포인트 저장: {path}  (loss={loss:.4f})")
 
 
 def load_checkpoint(model, optimizer, scaler, cfg):
-    ckpts = sorted(glob.glob(os.path.join(cfg['save_dir'], 'ckpt_step*.pt')))
+    ckpts = sorted(glob.glob(os.path.join(cfg['save_dir'], 'ckpt_step*.pt')),
+                   key=lambda x: int(re.search(r'ckpt_step(\d+)\.pt', x).group(1)))
     if not ckpts:
         return 0
     ckpt = torch.load(ckpts[-1])
