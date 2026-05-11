@@ -41,9 +41,9 @@ CONFIG = {
     'grad_clip':    1.0,
 
     # 경로
-    'data_path':    '/workspace/train.txt',
-    'save_dir':     '/workspace/checkpoints',
-    'sp_model':     '/workspace/tokenizer.model',
+    'data_path':    '/testmy01/train.txt',
+    'save_dir':     '/testmy01/checkpoints',
+    'sp_model':     '/testmy01/tokenizer.model',
 
     # 체크포인트
     'save_interval_sec': 1800,   # 30분마다 저장
