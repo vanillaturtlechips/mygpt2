@@ -376,9 +376,15 @@ def train():
                 opt_step += 1
 
                 if opt_step % cfg['log_interval'] == 0:
+                    now     = time.strftime('%Y-%m-%d %H:%M:%S')
                     elapsed = time.time() - t_start
-                    print(f"opt {opt_step:6d} | loss {accum_loss:.4f} | "
-                          f"lr {lr:.2e} | {elapsed:.0f}s", flush=True)
+                    remain  = cfg['max_steps'] - step
+                    sps     = (step - start_step) / max(elapsed, 1)
+                    eta_sec = remain / max(sps, 1e-9)
+                    eta_str = time.strftime('%H:%M:%S', time.gmtime(eta_sec))
+                    print(f"[{now}] opt {opt_step:6d} | loss {accum_loss:.4f} | "
+                          f"lr {lr:.2e} | elapsed {elapsed:.0f}s | "
+                          f"sps {sps:.1f} | eta {eta_str}", flush=True)
                     accum_loss = 0.0
 
                 if time.time() - last_save > cfg['save_interval_sec']:
