@@ -9,6 +9,7 @@ A100 최적화 GPT-2 124M 한국어 학습 스크립트
 """
 
 import os
+import re
 import time
 import math
 import json
@@ -40,9 +41,9 @@ CONFIG = {
     'grad_clip':    1.0,
 
     # 경로
-    'data_path':    '/workspace/train.txt',
-    'save_dir':     '/workspace/checkpoints',
-    'sp_model':     '/workspace/tokenizer.model',
+    'data_path':    '/testmy01/train.txt',
+    'save_dir':     '/testmy01/checkpoints',
+    'sp_model':     '/testmy01/tokenizer.model',
 
     # 체크포인트
     'save_interval_sec': 1800,   # 30분마다 저장
@@ -275,15 +276,17 @@ def save_checkpoint(model, optimizer, scaler, step, loss, cfg):
         'config':    cfg,
     }, path)
 
-    # 최신 2개만 유지
-    ckpts = sorted(glob.glob(os.path.join(cfg['save_dir'], 'ckpt_step*.pt')))
+    # 최신 2개만 유지 (숫자 기준 정렬)
+    ckpts = sorted(glob.glob(os.path.join(cfg['save_dir'], 'ckpt_step*.pt')),
+                   key=lambda x: int(re.search(r'ckpt_step(\d+)\.pt', x).group(1)))
     for old in ckpts[:-2]:
         os.remove(old)
     print(f"\n체크포인트 저장: {path}  (loss={loss:.4f})")
 
 
 def load_checkpoint(model, optimizer, scaler, cfg):
-    ckpts = sorted(glob.glob(os.path.join(cfg['save_dir'], 'ckpt_step*.pt')))
+    ckpts = sorted(glob.glob(os.path.join(cfg['save_dir'], 'ckpt_step*.pt')),
+                   key=lambda x: int(re.search(r'ckpt_step(\d+)\.pt', x).group(1)))
     if not ckpts:
         return 0
     ckpt = torch.load(ckpts[-1])
