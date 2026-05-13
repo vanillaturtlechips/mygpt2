@@ -215,20 +215,41 @@ class GPT(Module):
                    num_layers=12, max_seq_len=1024, dropout=0.1)
 
     def generate(self, idx, max_new_tokens: int = 50,
-                 temperature: float = 1.0, top_k: int = None) -> list:
+                 temperature: float = 1.0, top_k: int = None,
+                 top_p: float = None, repetition_penalty: float = 1.0) -> list:
         self.eval()
         generated = idx.tolist() if isinstance(idx, np.ndarray) else list(idx)
         for _ in range(max_new_tokens):
             ctx = np.array([generated[-self.max_seq_len:]])
             logits = self.forward(ctx)
-            last = logits.data[0, -1] / temperature
+            last = logits.data[0, -1].copy()
+
+            # repetition penalty: 이미 생성된 토큰의 logit을 낮춤
+            if repetition_penalty != 1.0:
+                for tok in set(generated):
+                    if tok < len(last):
+                        last[tok] = last[tok] / repetition_penalty if last[tok] > 0 else last[tok] * repetition_penalty
+
+            last = last / temperature
+
+            # top-k
             if top_k:
                 idx_topk = np.argpartition(last, -top_k)[-top_k:]
                 mask = np.full_like(last, -1e9)
                 mask[idx_topk] = 0
                 last = last + mask
+
             probs = np.exp(last - last.max())
             probs /= probs.sum()
+
+            # top-p (nucleus sampling)
+            if top_p is not None and top_p < 1.0:
+                sorted_idx = np.argsort(probs)[::-1]
+                cumsum = np.cumsum(probs[sorted_idx])
+                cutoff = np.searchsorted(cumsum, top_p)
+                probs[sorted_idx[cutoff + 1:]] = 0.0
+                probs /= probs.sum()
+
             next_tok = int(np.random.choice(len(probs), p=probs))
             generated.append(next_tok)
         return generated

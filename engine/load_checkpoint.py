@@ -7,6 +7,7 @@ train_a100.py (PyTorch GPT2) 체크포인트 → engine/transformer.py (numpy GP
 """
 
 import numpy as np
+from .autograd import Tensor
 
 
 def load_from_pytorch_ckpt(ckpt_path: str):
@@ -94,6 +95,32 @@ def load_from_pytorch_ckpt(ckpt_path: str):
           f"layers={num_layers}, seq={max_seq_len}")
     print(f"  파라미터: {model.num_params():,}")
     return model
+
+
+def expand_vocab(model, new_vocab_size: int, init_std: float = 0.02) -> None:
+    """token_emb와 head를 new_vocab_size로 확장 (새 토큰 행을 뒤에 추가).
+
+    SPChatTokenizer 사용 시 load_from_pytorch_ckpt 직후 호출:
+        expand_vocab(model, tok.vocab_size)   # 32000 → 32002
+    """
+    old_size = model.token_emb.weight.data.shape[0]
+    n_new = new_vocab_size - old_size
+    if n_new <= 0:
+        return
+
+    dim = model.embed_dim
+    new_rows = (np.random.randn(n_new, dim) * init_std).astype(np.float32)
+
+    model.token_emb.weight = Tensor(
+        np.vstack([model.token_emb.weight.data, new_rows]),
+        requires_grad=True,
+    )
+    model.head.weight = Tensor(
+        np.vstack([model.head.weight.data, new_rows.copy()]),
+        requires_grad=True,
+    )
+    model.vocab_size = new_vocab_size
+    print(f"vocab 확장: {old_size} → {new_vocab_size} (+{n_new} 토큰)")
 
 
 def verify_mapping(ckpt_path: str, n_tokens: int = 16) -> bool:

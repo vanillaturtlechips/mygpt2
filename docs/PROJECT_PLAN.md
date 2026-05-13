@@ -7,12 +7,16 @@
 
 ## 현재 진행중
 
-**한국어 GPT-2 124M 사전학습**
+**프로젝트 ① — finetuned_v2.json 학습 중**
+- SFT 데이터 552쌍 생성 완료 (RAG 기반 500 + 독립 생성 52)
+- SFT 3에포크 + DPO 1에포크 실행 중 (`checkpoints/finetuned_v2.json`)
+- DPO 모드 붕괴 트러블슈팅 완료 → `docs/TROUBLESHOOTING_DPO_MODE_COLLAPSE.md`
+
+**한국어 GPT-2 124M 사전학습** ✅ 완료
 - 스크립트: `train_a100.py`
 - 플랫폼: RunPod A100 80GB
 - 데이터: 231lee/korean-gpt2-dataset (10GB, ~2.1B 토큰)
-- 체크포인트: ckpt_step960 → 200,000 steps 목표
-- 예상 완료: 오늘 오후 3시 20분경
+- 체크포인트: `checkpoints/ckpt_step200000.pt` (1.3GB)
 - 산출물: HuggingFace 모델 허브 업로드
 
 ---
@@ -121,6 +125,7 @@ GraphRAG 탐색:
 | CRAG | 검색 결과 신뢰도 평가 | 할루시네이션 감소 |
 | Hybrid Search | BM25 + 벡터 결합 | 검색 커버리지 |
 | Prompt Caching | 공통 prefix 캐싱 | 비용 70% 절감 |
+| **Ray Serve** | **모델 서빙 + 로드밸런싱** | **수평 확장 + A/B 테스트** |
 
 ### CRAG 동작
 ```
@@ -129,10 +134,30 @@ GraphRAG 탐색:
     → 신뢰도 높음 → 바로 답변 생성
 ```
 
+### Ray Serve 서빙 구조
+```python
+@serve.deployment(num_replicas=3, ray_actor_options={"num_cpus": 1})
+class KoreanGPT:
+    def __init__(self):
+        self.model = load_quantized_model()  # INT8, ~700MB/replica
+
+@serve.deployment
+class RAGRouter:
+    def __init__(self, model):
+        self.model = model          # 우리 finetuned_v2 (INT8)
+        self.fallback = ClaudeAPI() # 신뢰도 낮을 때 fallback
+
+# num_replicas 값 하나로 수십~수백 개 복사본까지 확장 가능
+```
+
+> **양자화 전제**: float32(2.8GB) → INT8(700MB)로 줄여야 다중 복사 현실적
+> 단일 서버: ~10-20개 / Ray 클러스터(다중 머신): 수백 개
+
 ### 산출물
 - 라이브 URL (HuggingFace Spaces or Vercel)
 - 실제 접속 가능한 챗봇 데모
-- 비용 최적화 리포트
+- Ray Serve 3-replica 로드밸런싱 데모
+- 비용 최적화 리포트 (Prompt Caching + 양자화)
 
 ### 활용 파일
 - `engine/server.py` (KV-cache 추론 서버)
@@ -231,7 +256,13 @@ math: true
 ├── HyDE                ② 코드 검색 정확도
 ├── CRAG                ③ 할루시네이션 방지
 ├── Reflexion           ④ 자기 개선 루프
-└── Constitutional AI   ① 품질 자동 검증
+├── Constitutional AI   ① 품질 자동 검증
+└── Ray Serve           ③ 서빙 인프라 + ⑤ 모델 아레나 오케스트레이션
+
+인프라 스택
+├── INT8 양자화         float32(2.8GB) → INT8(700MB), 다중 복사 전제
+├── Ray Serve           로드밸런싱 / 오토스케일링 / 수평 확장
+└── LLM-as-judge        eval.py 기반 ELO 점수 자동 집계
 ```
 
 ---
@@ -291,8 +322,25 @@ math: true
 → ③ 챗봇 응답 + ④ 블로그 자동 저장 (선택)
 ```
 
+### Ray Serve 오케스트레이션 레이어
+```
+Ray Serve Router
+    ├── KoreanGPT × N  (우리 모델, INT8 양자화, num_replicas=N)
+    ├── Qwen2.5-1.5B   (오픈소스 비교군)
+    └── Claude Haiku   (API fallback)
+         ↓
+    LLM-as-judge (eval.py 연동)
+         ↓
+    ELO 점수 자동 업데이트  ← "모델 아레나"
+```
+
+- `num_replicas` 하나로 수평 확장 제어
+- 트래픽 급증 시 오토스케일링, 롤링 업데이트 지원
+- 같은 질문에 여러 모델이 동시 답변 → judge가 승자 판정 → ELO 집계
+
 ### 에코시스템 산출물
 - A2A로 연결된 4개 에이전트가 동시에 동작하는 데모 영상
+- Ray Serve 기반 모델 아레나 — 우리 모델 vs 오픈소스 ELO 비교
 - `ecosystem/main.py` — 통합 진입점
 - "혼자 공부하는 AI 엔지니어의 학습 시스템" 포트폴리오 스토리
 
@@ -305,6 +353,6 @@ math: true
 | GPT-2 학습 | HuggingFace 모델 링크 | "직접 학습까지 했네" |
 | 파인튜닝 | 학습 그래프 + 모델 카드 | "파이프라인 전체 구현" |
 | RAG 코드베이스 | GitHub + 데모 GIF | "GraphRAG까지 아네" |
-| RAG 챗봇 | 라이브 URL | "배포도 할 줄 아네" |
+| RAG 챗봇 + Ray Serve | 라이브 URL + replica 데모 | "배포 + 서빙 인프라까지 아네" |
 | 블로그 PR 에이전트 | 실제 PR 링크 + 자동화 영상 | "직접 쓰는 도구까지 만들었네" |
-| 에코시스템 통합 | 4개 에이전트 동작 데모 영상 | "시스템 설계까지 생각하네" |
+| 에코시스템 + 모델 아레나 | 4개 에이전트 + ELO 대시보드 | "설계 + 인프라 + 평가까지 원사이클" |
